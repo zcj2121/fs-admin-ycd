@@ -31,14 +31,20 @@ export const constantRouterMap = [
   {
     path: '/tables',
     component: Layout,
-    redirect: 'tables/plan',
-    meta: { title: '预案管理', icon: 'file-text' },
+    redirect: 'tables/table',
+    meta: { title: 'tables', icon: 'file-text' },
     children: [
+      {
+        path: 'table',
+        name: 'table',
+        component: () => import('@/views/tables/table/index'),
+        meta: { title: 'table', icon: 'file' }
+      },
       {
         path: 'plan',
         name: 'plan',
         component: () => import('@/views/tables/plan/index'),
-        meta: { title: '预案计划', icon: 'file' }
+        meta: { title: 'plan', icon: 'file' }
       }
     ]
   }

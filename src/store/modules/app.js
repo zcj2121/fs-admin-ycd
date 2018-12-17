@@ -4,7 +4,8 @@ const app = {
   state: {
     sidebar: {
       opened: !+Cookies.get('sidebarStatus')
-    }
+    },
+    limit: 20
   },
   mutations: {
     TOGGLE_SIDEBAR: state => {
@@ -14,6 +15,9 @@ const app = {
         Cookies.set('sidebarStatus', 0)
       }
       state.sidebar.opened = !state.sidebar.opened
+    },
+    SET_LIMIT: (state, limit) => {
+      state.limit = limit
     }
   },
   actions: {

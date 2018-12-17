@@ -1,36 +1,20 @@
 <template>
   <div class="app-container" id="planTable">
     <div class="filter-container">
-      <el-input style="width: 200px;" size="mini" class="filter-item" v-model="searchQuery.preplanName" placeholder="请输入预案名称">
+      <el-input style="width: 200px;" size="mini" class="filter-item" v-model="listQuery.title" placeholder="请输入标题">
       </el-input>
-      <el-select style="width: 200px;" size="mini" v-model="searchQuery.preStatus" placeholder="请选择状态">
-        <el-option key="" label="全部状态" value=""></el-option>
-        <el-option key="1" label="待提交" value="1"></el-option>
-        <el-option key="2" label="待审核" value="2"></el-option>
-        <el-option key="3" label="通过" value="3"></el-option>
-        <el-option key="4" label="驳回" value="4"></el-option>
-        <el-option key="5" label="发布" value="5"></el-option>
-        <el-option key="0" label="历史" value="0"></el-option>
+      <el-select  style="width: 200px;" size="mini" v-model="listQuery.type" placeholder="请选择状态">
+        <el-option v-for="item in calendarTypeOptions" :key="item.key" :label="item.display_name+'('+item.key+')'" :value="item.key"/>
       </el-select>
       <el-button class="filter-item" size="mini" type="primary" icon="el-icon-search" @click="search">搜索</el-button>
       <el-button class="filter-item" size="mini" style="margin-left: 10px;" type="primary" icon="el-icon-edit" @click="operate('add')">新增</el-button>
     </div>
     <el-table :data="list" v-loading.body="listLoading" element-loading-text="Loading" border fit>
-      <el-table-column label="预案名称" :show-overflow-tooltip="true" prop="preplanName" min-width="100" sortable></el-table-column>
-      <el-table-column label="版本号" prop="versionNum" width="90" sortable></el-table-column>
-      <el-table-column class-name="status-col" label="预案类型" width="110">
-        <template slot-scope="scope">
-          {{scope.row.type === 1 ? '专项预案' : '总体预案'}}
-        </template>
-      </el-table-column>
-      <el-table-column label="预案负责人" prop="userName" width="120" sortable></el-table-column>
-      <el-table-column label="描述" :show-overflow-tooltip="true" prop="preDesc" min-width="120" sortable></el-table-column>
-      <el-table-column class-name="status-col" label="状态" width="75" align="center">
-        <template slot-scope="scope">
-          {{scope.row.preStatus | statusFilter}}
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="310">
+      <el-table-column label="ID" :show-overflow-tooltip="true" prop="id" min-width="25" sortable></el-table-column>
+      <el-table-column label="forecast" prop="forecast" width="100" sortable></el-table-column>
+      <el-table-column label="author" prop="author" width="120" sortable></el-table-column>
+      <el-table-column label="content" :show-overflow-tooltip="true" prop="content_short" min-width="120" sortable></el-table-column>
+      <el-table-column label="操作" width="100">
         <template slot-scope="scope">
           <el-button-group>
             <el-button size="mini" type="primary" @click="setshow('detail',scope.row)" v-if="scope.row.preStatus!==4">查看</el-button>
@@ -47,15 +31,17 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination background
-                   @size-change="handleSizeChange"
-                   @current-change="handleCurrentChange"
-                   :current-page="queryPage.index"
-                   :page-sizes="pageSizes"
-                   :page-size="queryPage.size"
-                   layout="total, sizes, prev, pager, next, jumper"
-                   :total="pageTotal">
-    </el-pagination>
+
+    <pagination v-show="total>0" :total="total" :page.sync="listQuery.page" :limit.sync="listQuery.limit" @pagination="fetchData" />
+    <!--<el-pagination background-->
+                   <!--@size-change="handleSizeChange"-->
+                   <!--@current-change="handleCurrentChange"-->
+                   <!--:current-page="queryPage.index"-->
+                   <!--:page-sizes="pageSizes"-->
+                   <!--:page-size="queryPage.size"-->
+                   <!--layout="total, sizes, prev, pager, next, jumper"-->
+                   <!--:total="pageTotal">-->
+    <!--</el-pagination>-->
     <!--新增、编辑、驳回编辑 弹出框-->
     <el-dialog :title="planTitle" width="800px" :visible.sync="formShow" :modal-append-to-body="false" @close="closeDialog('formAll')">
       <el-form :model="form" ref="formAll" label-position="right" label-width="110px">
@@ -302,11 +288,20 @@
 <script>
   import { findAllUserInRoleEnable, findPreplanApproveTemplate, findPreplanCanUseParent, savePreplan, updatePreplan, findPreplan, findPreplanById, savePreplanExecution, uploadPreplanFile, downPreplanFile } from '@/api/tables/plan'
   import { alertBox, downURL } from '@/utils/request'
+  import { fetchList, fetchPv, createArticle, updateArticle } from '@/api/article'
+  import Pagination from '@/components/Pagination' // Secondary package based on el-pagination
+
+  const calendarTypeOptions = [
+    { key: 'CN', display_name: 'China' },
+    { key: 'US', display_name: 'USA' },
+    { key: 'JP', display_name: 'Japan' },
+    { key: 'EU', display_name: 'Eurozone' }
+  ]
+
   export default {
     data() {
       return {
         data: null,
-        list: null,
         listLoading: true,
         planTitle: '',
         setTitle: '',
@@ -345,24 +340,26 @@
           scene: '',
           childList: []
         },
-        pageTotal: 0,
-        pageSizes: [10, 15, 20],
-        queryPage: {
-          index: 1,
-          size: 10
-        },
-        searchQuery: { // 查询数据
-          preplanName: '',
-          preStatus: ''
-        },
         useridOptions: [],
         PreplanCanUseParentOptions: [],
         PreplanApproveTemplateOptions: [],
         fileNameShow: '',
         fileNameDown: '',
-        downUrl: downURL() + '/dr/downPreplanFile.do?fileName='
+        downUrl: downURL() + '/dr/downPreplanFile.do?fileName=',
+        calendarTypeOptions,
+        list: null,
+        total: 0,
+        listQuery: {
+          page: 1,
+          limit: 20,
+          importance: undefined,
+          title: undefined,
+          type: undefined,
+          sort: '+id'
+        }
       }
     },
+    components: { Pagination },
     filters: {
       statusFilter(status) {
         const statusMap = {
@@ -394,13 +391,13 @@
     },
     watch: {
       // 监听 查询条件
-      searchQuery: {
-        handler(searchQuery) {
-          this.search()
-          this.queryPage.index = 1
-        },
-        deep: true
-      }
+      // searchQuery: {
+      //   handler(searchQuery) {
+      //     this.search()
+      //     this.queryPage.index = 1
+      //   },
+      //   deep: true
+      // }
     },
     created() {
       this.fetchData()
@@ -409,41 +406,22 @@
       // 列表数据 分页 搜索
       // 请求 原始数据
       fetchData() {
-        this.queryPage.index = 1
         this.listLoading = true
-        findPreplan(this.searchQuery).then(response => {
-          if (response) {
-            this.data = response.list
-            this.pageTotal = response.count
-            this.listData()
+        console.log(this.listQuery)
+        fetchList(this.listQuery).then(response => {
+          console.log(response.data)
+          this.list = response.data.items
+          this.total = response.data.total
+
+          // Just to simulate the time of the request
+          setTimeout(() => {
             this.listLoading = false
-          }
+          }, 1.5 * 1000)
         })
-      },
-      // 每页 条数
-      handleSizeChange(val) {
-        this.queryPage.size = val
-        this.listData()
-      },
-      // 第几页
-      handleCurrentChange(val) {
-        this.queryPage.index = val
-        this.listData()
-      },
-      // 当前列表 显示数据
-      listData() {
-        const size = this.queryPage.size
-        const index = this.queryPage.index
-        this.list = this.data.slice(size * (index - 1), size * index)
       },
       // 查询 数据
       search() {
         this.fetchData()
-      },
-      // 列表数据 分页 搜索
-      // 删除等 公共弹框
-      operation(id, msg, url) {
-        alertBox(this, msg, url, id)
       },
       // 删除等 公共弹框
       operate(type, val) {
@@ -693,7 +671,6 @@
         this.executionList.splice(index, 1)
       },
       operationOther(val, msg, url) {
-        alertPost(this, val, msg, url)
       },
       typeChange() {
         if (this.form.type === '0') {
